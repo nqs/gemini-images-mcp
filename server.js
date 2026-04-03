@@ -13,10 +13,9 @@ import os from "node:os";
 import crypto from "node:crypto";
 import sharp from "sharp";
 
-const apiKey = process.argv[2] || process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
-  console.error("Usage: node server.js [GEMINI_API_KEY]");
-  console.error("  or: export GEMINI_API_KEY=AIza...");
+  console.error("GEMINI_API_KEY missing - export GEMINI_API_KEY=AIza...");
   process.exit(1);
 }
 
@@ -123,6 +122,15 @@ function buildImageToolResult(filePath, optimized, aspectRatio) {
         type: "image",
         data: optimized.toString("base64"),
         mimeType
+      },
+      {
+        type: "resource_link",
+        resource: {
+          uri: `file://${filePath}`,
+          description: `Full-resolution image saved to ${filePath} (${aspectRatio})`,
+          mimeType,
+          size: optimized.length
+        }
       },
       {
         type: "text",
