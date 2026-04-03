@@ -1,0 +1,30 @@
+{
+  "name": "gemini-image-mcp",
+  "version": "3.0.0",
+  "description": "Gemini Image MCP server - generate & edit images via Gemini",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "clean": "rm -rf node_modules package-lock.json && npm i",
+    "test": "node test-harness.js",
+    "test:list": "node test-harness.js list",
+    "test:generate": "node test-harness.js generate",
+    "test:edit": "node test-harness.js edit"
+  },
+  "keywords": ["mcp", "gemini", "image-generation", "nano-banana", "claude"],
+  "author": "Your Homelab",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@google/genai": "^1.0.0",
+    "zod": "^3.23.0",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {},
+  "packageManager": "npm@latest"
+}
