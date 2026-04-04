@@ -22,8 +22,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@google/genai": "^1.0.0",
-    "zod": "^3.23.0",
-    "sharp": "^0.34.5"
+    "zod": "^3.23.0"
   },
   "devDependencies": {},
   "packageManager": "npm@latest"

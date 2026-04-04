@@ -3,5 +3,8 @@ main = "server.js"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Set the Gemini API key as a secret (never commit the value):
+#   wrangler secret put GEMINI_API_KEY
+
 [placement]
 mode = "smart"
