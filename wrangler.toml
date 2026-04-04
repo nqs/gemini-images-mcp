@@ -1,0 +1,12 @@
+name = "gemini-image-mcp"
+main = "server.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Non-secret environment variables can be set here
+# GEMINI_API_KEY should be set as a secret via:
+#   wrangler secret put GEMINI_API_KEY
+
+[[placement]]
+mode = "smart"
