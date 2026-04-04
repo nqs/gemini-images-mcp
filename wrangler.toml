@@ -3,5 +3,5 @@ main = "server.js"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
-[[placement]]
+[placement]
 mode = "smart"
