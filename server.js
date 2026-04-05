@@ -31,12 +31,15 @@ function buildImageToolResult(base64Data, aspectRatio) {
   };
 }
 
-async function handleGenerateImage(ai, args) {
+async function handleGenerateImage(args) {
   const parsed = z.object({
+    gemini_api_key: z.string().min(1),
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
     style: z.enum(STYLES).optional()
   }).parse(args);
+
+  const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
 
   const fullPrompt = parsed.style
     ? `${parsed.style}, ${parsed.prompt}, high quality, detailed`
@@ -59,13 +62,16 @@ async function handleGenerateImage(ai, args) {
   return buildImageToolResult(base64Data, parsed.aspect_ratio);
 }
 
-async function handleEditImage(ai, args) {
+async function handleEditImage(args) {
   const parsed = z.object({
+    gemini_api_key: z.string().min(1),
     image_data: z.string().min(1),
     mime_type: z.enum(["image/png", "image/jpeg", "image/webp"]).optional().default("image/png"),
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional()
   }).parse(args);
+
+  const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
 
   const config = { responseModalities: ["TEXT", "IMAGE"] };
   if (parsed.aspect_ratio) {
@@ -89,7 +95,7 @@ async function handleEditImage(ai, args) {
   return buildImageToolResult(base64Data, parsed.aspect_ratio || "original");
 }
 
-function createMcpServer(ai) {
+function createMcpServer() {
   const server = new Server(
     { name: "gemini-image-mcp", version: "3.0.0" },
     { capabilities: { tools: {} } }
@@ -103,11 +109,12 @@ function createMcpServer(ai) {
         inputSchema: {
           type: "object",
           properties: {
+            gemini_api_key: { type: "string", description: "Gemini API key" },
             prompt: { type: "string", description: "Image description. Photorealistic, art, diagrams, etc." },
             aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Image aspect ratio (default: 1:1)" },
             style: { type: "string", enum: STYLES, description: "Art style to apply" }
           },
-          required: ["prompt"]
+          required: ["gemini_api_key", "prompt"]
         }
       },
       {
@@ -116,6 +123,7 @@ function createMcpServer(ai) {
         inputSchema: {
           type: "object",
           properties: {
+            gemini_api_key: { type: "string", description: "Gemini API key" },
             image_data: { type: "string", description: "Base64-encoded image data" },
             mime_type: {
               type: "string",
@@ -125,7 +133,7 @@ function createMcpServer(ai) {
             prompt: { type: "string", description: "Description of the edits to make (e.g. 'add a hat', 'change background to beach')" },
             aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Output aspect ratio (default: preserves original)" }
           },
-          required: ["image_data", "prompt"]
+          required: ["gemini_api_key", "image_data", "prompt"]
         }
       }
     ]
@@ -135,8 +143,8 @@ function createMcpServer(ai) {
     const { name, arguments: args } = request.params;
     try {
       switch (name) {
-        case "generate_image": return await handleGenerateImage(ai, args);
-        case "edit_image": return await handleEditImage(ai, args);
+        case "generate_image": return await handleGenerateImage(args);
+        case "edit_image": return await handleEditImage(args);
         default:
           return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
       }
@@ -152,17 +160,8 @@ function createMcpServer(ai) {
 }
 
 export default {
-  async fetch(request, env) {
-    const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: "GEMINI_API_KEY secret not configured" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const server = createMcpServer(ai);
+  async fetch(request) {
+    const server = createMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await server.connect(transport);
     return transport.handleRequest(request);
