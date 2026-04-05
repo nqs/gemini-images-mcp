@@ -1,6 +1,3 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
@@ -8,25 +5,53 @@ const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const STYLES = ["photorealistic", "digital art", "line drawing", "diagram"];
 const MODEL = "gemini-3-pro-image-preview";
 
+const TOOLS = [
+  {
+    name: "generate_image",
+    description: "Generate an image from a text prompt using Gemini. Returns the image inline as base64.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        gemini_api_key: { type: "string", description: "Gemini API key" },
+        prompt: { type: "string", description: "Image description. Photorealistic, art, diagrams, etc." },
+        aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Image aspect ratio (default: 1:1)" },
+        style: { type: "string", enum: STYLES, description: "Art style to apply" }
+      },
+      required: ["gemini_api_key", "prompt"]
+    }
+  },
+  {
+    name: "edit_image",
+    description: "Edit an existing image using a text prompt. Pass the image as base64-encoded data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        gemini_api_key: { type: "string", description: "Gemini API key" },
+        image_data: { type: "string", description: "Base64-encoded image data" },
+        mime_type: {
+          type: "string",
+          enum: ["image/png", "image/jpeg", "image/webp"],
+          description: "MIME type of the input image (default: image/png)"
+        },
+        prompt: { type: "string", description: "Description of the edits to make" },
+        aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Output aspect ratio (default: preserves original)" }
+      },
+      required: ["gemini_api_key", "image_data", "prompt"]
+    }
+  }
+];
+
 function extractImage(result) {
   const parts = result.candidates?.[0]?.content?.parts || [];
   const imagePart = parts.find(p => p.inlineData?.data);
-  if (!imagePart?.inlineData?.data) return null;
-  return imagePart.inlineData.data; // already base64
+  return imagePart?.inlineData?.data ?? null; // already base64
 }
 
-function buildImageToolResult(base64Data, aspectRatio) {
+function imageResult(base64Data, aspectRatio) {
   return {
     content: [
-      {
-        type: "image",
-        data: base64Data,
-        mimeType: "image/png"
-      },
-      {
-        type: "text",
-        text: `Image generated (${aspectRatio})`
-      }
+      { type: "image", data: base64Data, mimeType: "image/png" },
+      { type: "text", text: `Image generated (${aspectRatio})` }
     ]
   };
 }
@@ -40,7 +65,6 @@ async function handleGenerateImage(args) {
   }).parse(args);
 
   const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
-
   const fullPrompt = parsed.style
     ? `${parsed.style}, ${parsed.prompt}, high quality, detailed`
     : `${parsed.prompt}, high quality, detailed`;
@@ -48,18 +72,14 @@ async function handleGenerateImage(args) {
   const result = await ai.models.generateContent({
     model: MODEL,
     contents: fullPrompt,
-    config: {
-      responseModalities: ["TEXT", "IMAGE"],
-      imageConfig: { aspectRatio: parsed.aspect_ratio },
-    },
+    config: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: parsed.aspect_ratio } },
   });
 
   const base64Data = extractImage(result);
   if (!base64Data) {
     return { content: [{ type: "text", text: "No image returned by Gemini. Try a shorter or simpler prompt." }], isError: true };
   }
-
-  return buildImageToolResult(base64Data, parsed.aspect_ratio);
+  return imageResult(base64Data, parsed.aspect_ratio);
 }
 
 async function handleEditImage(args) {
@@ -72,11 +92,8 @@ async function handleEditImage(args) {
   }).parse(args);
 
   const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
-
   const config = { responseModalities: ["TEXT", "IMAGE"] };
-  if (parsed.aspect_ratio) {
-    config.imageConfig = { aspectRatio: parsed.aspect_ratio };
-  }
+  if (parsed.aspect_ratio) config.imageConfig = { aspectRatio: parsed.aspect_ratio };
 
   const result = await ai.models.generateContent({
     model: MODEL,
@@ -91,79 +108,61 @@ async function handleEditImage(args) {
   if (!base64Data) {
     return { content: [{ type: "text", text: "No image returned by Gemini. Try a different edit prompt." }], isError: true };
   }
-
-  return buildImageToolResult(base64Data, parsed.aspect_ratio || "original");
+  return imageResult(base64Data, parsed.aspect_ratio || "original");
 }
 
-function createMcpServer() {
-  const server = new Server(
-    { name: "gemini-image-mcp", version: "3.0.0" },
-    { capabilities: { tools: {} } }
-  );
+async function callTool(name, args) {
+  switch (name) {
+    case "generate_image": return handleGenerateImage(args);
+    case "edit_image":     return handleEditImage(args);
+    default: throw new Error(`Unknown tool: ${name}`);
+  }
+}
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: "generate_image",
-        description: "Generate an image from a text prompt using Gemini. Returns the image inline as base64.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            gemini_api_key: { type: "string", description: "Gemini API key" },
-            prompt: { type: "string", description: "Image description. Photorealistic, art, diagrams, etc." },
-            aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Image aspect ratio (default: 1:1)" },
-            style: { type: "string", enum: STYLES, description: "Art style to apply" }
-          },
-          required: ["gemini_api_key", "prompt"]
-        }
-      },
-      {
-        name: "edit_image",
-        description: "Edit an existing image using a text prompt. Pass the image as base64-encoded data.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            gemini_api_key: { type: "string", description: "Gemini API key" },
-            image_data: { type: "string", description: "Base64-encoded image data" },
-            mime_type: {
-              type: "string",
-              enum: ["image/png", "image/jpeg", "image/webp"],
-              description: "MIME type of the input image (default: image/png)"
-            },
-            prompt: { type: "string", description: "Description of the edits to make (e.g. 'add a hat', 'change background to beach')" },
-            aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Output aspect ratio (default: preserves original)" }
-          },
-          required: ["gemini_api_key", "image_data", "prompt"]
-        }
-      }
-    ]
-  }));
+// Minimal MCP JSON-RPC handler (avoids @modelcontextprotocol/sdk and its Node.js-only deps)
+async function handleMcpMessage(msg) {
+  const { jsonrpc, id, method, params } = msg;
+  const ok = result => ({ jsonrpc, id, result });
+  const err = (code, message) => ({ jsonrpc, id, error: { code, message } });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    try {
-      switch (name) {
-        case "generate_image": return await handleGenerateImage(args);
-        case "edit_image": return await handleEditImage(args);
-        default:
-          return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
+  try {
+    switch (method) {
+      case "initialize":
+        return ok({
+          protocolVersion: "2024-11-05",
+          serverInfo: { name: "gemini-image-mcp", version: "3.0.0" },
+          capabilities: { tools: {} }
+        });
+      case "notifications/initialized":
+        return null; // notification — no response
+      case "tools/list":
+        return ok({ tools: TOOLS });
+      case "tools/call": {
+        const result = await callTool(params.name, params.arguments);
+        return ok(result);
       }
-    } catch (error) {
-      return {
-        content: [{ type: "text", text: `${name} failed: ${error.message}\n\nTips: Use English prompts, keep under 100 words, specify style/lighting for best results.` }],
-        isError: true
-      };
+      default:
+        return err(-32601, `Method not found: ${method}`);
     }
-  });
-
-  return server;
+  } catch (e) {
+    return err(-32603, e.message);
+  }
 }
 
 export default {
   async fetch(request) {
-    const server = createMcpServer();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    return transport.handleRequest(request);
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    const body = await request.json();
+    const messages = Array.isArray(body) ? body : [body];
+    const responses = (await Promise.all(messages.map(handleMcpMessage))).filter(r => r !== null);
+
+    if (!Array.isArray(body)) {
+      if (responses.length === 0) return new Response(null, { status: 204 });
+      return new Response(JSON.stringify(responses[0]), { headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify(responses), { headers: { "Content-Type": "application/json" } });
   }
 };
