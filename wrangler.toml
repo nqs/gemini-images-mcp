@@ -2,5 +2,9 @@ name = "gemini-image-mcp"
 main = "server.js"
 compatibility_date = "2025-04-01"
 
+routes = [
+  { pattern = "gemini.mcp.nqs.io", custom_domain = true }
+]
+
 [placement]
 mode = "smart"
