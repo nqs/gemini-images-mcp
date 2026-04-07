@@ -12,12 +12,11 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        gemini_api_key: { type: "string", description: "Gemini API key" },
         prompt: { type: "string", description: "Image description. Photorealistic, art, diagrams, etc." },
         aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Image aspect ratio (default: 1:1)" },
         style: { type: "string", enum: STYLES, description: "Art style to apply" }
       },
-      required: ["gemini_api_key", "prompt"]
+      required: ["prompt"]
     }
   },
   {
@@ -26,7 +25,6 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        gemini_api_key: { type: "string", description: "Gemini API key" },
         image_data: { type: "string", description: "Base64-encoded image data" },
         mime_type: {
           type: "string",
@@ -36,7 +34,7 @@ const TOOLS = [
         prompt: { type: "string", description: "Description of the edits to make" },
         aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Output aspect ratio (default: preserves original)" }
       },
-      required: ["gemini_api_key", "image_data", "prompt"]
+      required: ["image_data", "prompt"]
     }
   }
 ];
@@ -56,15 +54,13 @@ function imageResult(base64Data, aspectRatio) {
   };
 }
 
-async function handleGenerateImage(args) {
+async function handleGenerateImage(ai, args) {
   const parsed = z.object({
-    gemini_api_key: z.string().min(1),
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
     style: z.enum(STYLES).optional()
   }).parse(args);
 
-  const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
   const fullPrompt = parsed.style
     ? `${parsed.style}, ${parsed.prompt}, high quality, detailed`
     : `${parsed.prompt}, high quality, detailed`;
@@ -82,16 +78,14 @@ async function handleGenerateImage(args) {
   return imageResult(base64Data, parsed.aspect_ratio);
 }
 
-async function handleEditImage(args) {
+async function handleEditImage(ai, args) {
   const parsed = z.object({
-    gemini_api_key: z.string().min(1),
     image_data: z.string().min(1),
     mime_type: z.enum(["image/png", "image/jpeg", "image/webp"]).optional().default("image/png"),
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional()
   }).parse(args);
 
-  const ai = new GoogleGenAI({ apiKey: parsed.gemini_api_key });
   const config = { responseModalities: ["TEXT", "IMAGE"] };
   if (parsed.aspect_ratio) config.imageConfig = { aspectRatio: parsed.aspect_ratio };
 
@@ -111,42 +105,38 @@ async function handleEditImage(args) {
   return imageResult(base64Data, parsed.aspect_ratio || "original");
 }
 
-async function callTool(name, args) {
-  switch (name) {
-    case "generate_image": return handleGenerateImage(args);
-    case "edit_image":     return handleEditImage(args);
-    default: throw new Error(`Unknown tool: ${name}`);
-  }
-}
+function makeHandler(ai) {
+  return async function handleMcpMessage(msg) {
+    const { jsonrpc, id, method, params } = msg;
+    const ok = result => ({ jsonrpc, id, result });
+    const err = (code, message) => ({ jsonrpc, id, error: { code, message } });
 
-// Minimal MCP JSON-RPC handler (avoids @modelcontextprotocol/sdk and its Node.js-only deps)
-async function handleMcpMessage(msg) {
-  const { jsonrpc, id, method, params } = msg;
-  const ok = result => ({ jsonrpc, id, result });
-  const err = (code, message) => ({ jsonrpc, id, error: { code, message } });
-
-  try {
-    switch (method) {
-      case "initialize":
-        return ok({
-          protocolVersion: "2024-11-05",
-          serverInfo: { name: "gemini-image-mcp", version: "3.0.0" },
-          capabilities: { tools: {} }
-        });
-      case "notifications/initialized":
-        return null; // notification — no response
-      case "tools/list":
-        return ok({ tools: TOOLS });
-      case "tools/call": {
-        const result = await callTool(params.name, params.arguments);
-        return ok(result);
+    try {
+      switch (method) {
+        case "initialize":
+          return ok({
+            protocolVersion: "2024-11-05",
+            serverInfo: { name: "gemini-image-mcp", version: "3.0.0" },
+            capabilities: { tools: {} }
+          });
+        case "notifications/initialized":
+          return null;
+        case "tools/list":
+          return ok({ tools: TOOLS });
+        case "tools/call": {
+          switch (params.name) {
+            case "generate_image": return ok(await handleGenerateImage(ai, params.arguments));
+            case "edit_image":     return ok(await handleEditImage(ai, params.arguments));
+            default: return err(-32601, `Unknown tool: ${params.name}`);
+          }
+        }
+        default:
+          return err(-32601, `Method not found: ${method}`);
       }
-      default:
-        return err(-32601, `Method not found: ${method}`);
+    } catch (e) {
+      return err(-32603, e.message);
     }
-  } catch (e) {
-    return err(-32603, e.message);
-  }
+  };
 }
 
 export default {
@@ -154,6 +144,17 @@ export default {
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
+
+    const apiKey = new URL(request.url).searchParams.get("apiKey");
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const handleMcpMessage = makeHandler(ai);
 
     const body = await request.json();
     const messages = Array.isArray(body) ? body : [body];
