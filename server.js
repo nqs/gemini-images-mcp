@@ -3,7 +3,8 @@ import { z } from "zod";
 
 const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const STYLES = ["photorealistic", "digital art", "line drawing", "diagram"];
-const MODEL = "gemini-3-pro-image-preview";
+const IMAGE_MODEL = "gemini-3-pro-image-preview";
+const SEARCH_MODEL = "gemini-2.5-flash";
 
 const TOOLS = [
   {
@@ -36,6 +37,17 @@ const TOOLS = [
       },
       required: ["image_data", "prompt"]
     }
+  },
+  {
+    name: "google_search",
+    description: "Search the web using Google Search via Gemini. Returns a grounded answer with source citations. Useful for finding current information, facts, news, and real-time data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The search query to look up on Google" }
+      },
+      required: ["query"]
+    }
   }
 ];
 
@@ -66,7 +78,7 @@ async function handleGenerateImage(ai, args) {
     : `${parsed.prompt}, high quality, detailed`;
 
   const result = await ai.models.generateContent({
-    model: MODEL,
+    model: IMAGE_MODEL,
     contents: fullPrompt,
     config: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: parsed.aspect_ratio } },
   });
@@ -90,7 +102,7 @@ async function handleEditImage(ai, args) {
   if (parsed.aspect_ratio) config.imageConfig = { aspectRatio: parsed.aspect_ratio };
 
   const result = await ai.models.generateContent({
-    model: MODEL,
+    model: IMAGE_MODEL,
     contents: [
       { text: parsed.prompt },
       { inlineData: { mimeType: parsed.mime_type, data: parsed.image_data } },
@@ -103,6 +115,46 @@ async function handleEditImage(ai, args) {
     return { content: [{ type: "text", text: "No image returned by Gemini. Try a different edit prompt." }], isError: true };
   }
   return imageResult(base64Data, parsed.aspect_ratio || "original");
+}
+
+async function handleGoogleSearch(ai, args) {
+  const parsed = z.object({
+    query: z.string().min(1).max(1000),
+  }).parse(args);
+
+  const result = await ai.models.generateContent({
+    model: SEARCH_MODEL,
+    contents: parsed.query,
+    config: {
+      tools: [{ googleSearch: {} }],
+    },
+  });
+
+  const text = result.candidates?.[0]?.content?.parts
+    ?.filter(p => p.text)
+    .map(p => p.text)
+    .join("") || "";
+
+  const metadata = result.candidates?.[0]?.groundingMetadata;
+  const chunks = metadata?.groundingChunks || [];
+  const sources = chunks
+    .filter(c => c.web)
+    .map(c => ({ title: c.web.title, url: c.web.uri }));
+
+  const uniqueSources = sources.filter(
+    (s, i, arr) => arr.findIndex(o => o.url === s.url) === i
+  );
+
+  let responseText = text;
+  if (uniqueSources.length > 0) {
+    responseText += "\n\nSources:\n" + uniqueSources
+      .map((s, i) => `${i + 1}. [${s.title}](${s.url})`)
+      .join("\n");
+  }
+
+  return {
+    content: [{ type: "text", text: responseText }]
+  };
 }
 
 function makeHandler(ai) {
@@ -127,6 +179,7 @@ function makeHandler(ai) {
           switch (params.name) {
             case "generate_image": return ok(await handleGenerateImage(ai, params.arguments));
             case "edit_image":     return ok(await handleEditImage(ai, params.arguments));
+            case "google_search":  return ok(await handleGoogleSearch(ai, params.arguments));
             default: return err(-32601, `Unknown tool: ${params.name}`);
           }
         }
