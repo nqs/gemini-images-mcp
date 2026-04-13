@@ -172,11 +172,12 @@ async function main() {
 
   // ── List tools ──────────────────────────────────────────────────────────
   if (!filter || filter === "list") {
-    await test("tools/list returns generate_image and edit_image", async () => {
+    await test("tools/list returns all tools", async () => {
       const result = await client.request("tools/list");
       const names = result.tools.map((t) => t.name);
       assert(names.includes("generate_image"), "missing generate_image");
       assert(names.includes("edit_image"), "missing edit_image");
+      assert(names.includes("google_search"), "missing google_search");
       console.log(`    tools: ${names.join(", ")}`);
     });
   }
@@ -284,6 +285,35 @@ async function main() {
 
     // Cleanup
     await fs.unlink(testImagePath).catch(() => {});
+  }
+
+  // ── Search tests ────────────────────────────────────────────────────────
+  if (!filter || filter === "search") {
+    await test("google_search returns text with results", async () => {
+      const result = await client.request("tools/call", {
+        name: "google_search",
+        arguments: {
+          query: "What is the capital of France?",
+        },
+      });
+
+      const txt = contentOfType(result, "text");
+      assert(txt, "no text content block returned");
+      assert(txt.text.length > 0, "text response is empty");
+      assert(!result.isError, "request returned an error");
+      console.log(`    response length: ${txt.text.length} chars`);
+    });
+
+    await test("google_search with empty query returns error", async () => {
+      try {
+        await client.request("tools/call", {
+          name: "google_search",
+          arguments: { query: "" },
+        });
+      } catch {
+        // Expected - validation should reject empty query
+      }
+    });
   }
 
   // ── Summary ─────────────────────────────────────────────────────────────

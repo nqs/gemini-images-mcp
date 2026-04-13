@@ -11,7 +11,8 @@
     "test": "node test-harness.js",
     "test:list": "node test-harness.js list",
     "test:generate": "node test-harness.js generate",
-    "test:edit": "node test-harness.js edit"
+    "test:edit": "node test-harness.js edit",
+    "test:search": "node test-harness.js search"
   },
   "keywords": ["mcp", "gemini", "image-generation", "nano-banana", "claude"],
   "author": "Your Homelab",
