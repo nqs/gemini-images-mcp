@@ -1,6 +1,6 @@
 # Gemini Image MCP (Claude Integration Guide)
 
-This repository exposes a Model Context Protocol (MCP) tool wrapper around Google Gemini image generation/editing. Use `server.js` with MCP clients (including Anthropic Claude agents / Claude CLI) by calling tools via `tools/list` and `tools/call`.
+This repository exposes a Model Context Protocol (MCP) tool wrapper around Google Gemini image generation, editing, and web search. Use `server.js` with MCP clients (including Anthropic Claude agents / Claude CLI) by calling tools via `tools/list` and `tools/call`.
 
 ## Quick start
 
@@ -35,9 +35,15 @@ node test-harness.js list
 ### edit_image
 - description: Edit an existing image via Gemini.
 - inputSchema:
-  - image_path (string, required, absolute filesystem path)
+  - image_data (string, required, base64-encoded image data)
   - prompt (string, required)
+  - mime_type (string, optional; enum: `image/png`, `image/jpeg`, `image/webp`; default `image/png`)
   - aspect_ratio (string, optional; same enum as `generate_image`)
+
+### google_search
+- description: Search the web using Google Search via Gemini. Returns a grounded answer with source citations.
+- inputSchema:
+  - query (string, required, max 1000 chars)
 
 ## Parameter passing from Claude (or other MCP client)
 
@@ -59,7 +65,7 @@ Call the MCP request path `tools/call` with JSON-RPC method:
 }
 ```
 
-And for edit:
+For edit:
 
 ```json
 {
@@ -69,7 +75,7 @@ And for edit:
   "params": {
     "name": "edit_image",
     "arguments": {
-      "image_path": "/tmp/gemini-images/generated-...png",
+      "image_data": "<base64-encoded-image>",
       "prompt": "Add a glowing moon in the sky",
       "aspect_ratio": "16:9"
     }
@@ -77,23 +83,40 @@ And for edit:
 }
 ```
 
+And for search:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "google_search",
+    "arguments": {
+      "query": "latest news about AI"
+    }
+  }
+}
+```
+
 ## Response structure
 
-Successful responses from both tools include `content` as an array including:
-- `image` block with `data` (base64), `mimeType`, and inline visuals
-- a URI block `file://` with full saved image path
-- a `text` block that confirms saved path and aspect ratio
+Successful image tool responses include `content` as an array including:
+- `image` block with `data` (base64) and `mimeType`
+- a `text` block that confirms the aspect ratio
 
-If the generated image is too large, it is optimized via `sharp` before base64 inline return.
+Successful search responses include `content` as an array with:
+- a `text` block containing the grounded answer and a list of source URLs
 
 ## `test-harness.js` usage and behavior
 
 The harness executes the MCP server and performs JSON-RPC interactions over stdio.
 
-- `node test-harness.js` runs all tests (tools/list + generate + edit)
+- `node test-harness.js` runs all tests (tools/list + generate + edit + search)
 - `node test-harness.js list` checks available tool metadata
 - `node test-harness.js generate` runs generation tests
 - `node test-harness.js edit` runs editing tests
+- `node test-harness.js search` runs search tests
 
 ### Examples in harness
 
@@ -107,17 +130,19 @@ The harness executes the MCP server and performs JSON-RPC interactions over stdi
 - pre-created 1x1 red PNG file in temp dir
 - prompt: `Make this image blue instead of red`
 
+`google_search` call in harness:
+
+- query: `What is the capital of France?`
+
 ### Validation behavior
 
 - Input validated by `zod` in `server.js`.
-- Empty prompt rejects with error.
-- Non-existent `image_path` is handled and returns `isError` or throws.
+- Empty prompt/query rejects with error.
 
 ## Notes
 
-- Generated/edited images are saved under `~/.gemini-images`.
-- Inline output size capped at 512 KB; beyond that `sharp` downscales/compresses.
-- Server uses Gemini model `gemini-3-pro-image-preview` with `TEXT`+`IMAGE` modalities.
+- Image tools use Gemini model `gemini-3-pro-image-preview` with `TEXT`+`IMAGE` modalities.
+- Search tool uses Gemini model `gemini-2.5-flash` with Google Search grounding.
 
 ## Commands
 
