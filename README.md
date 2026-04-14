@@ -1,6 +1,6 @@
 # gemini-image-mcp
 
-An MCP server that provides image generation and editing tools powered by Google's Gemini model. Runs on Cloudflare Workers.
+An MCP server that provides image generation, editing, and Google web search tools powered by Google's Gemini models. Runs on Cloudflare Workers.
 
 ## Tools
 
@@ -25,6 +25,16 @@ Edit an existing image using a text prompt.
 | `mime_type`    | string | no       | `image/png` (default), `image/jpeg`, or `image/webp`              |
 | `aspect_ratio` | string | no       | Output aspect ratio (preserves original if omitted)                |
 
+### `google_search`
+
+Search the web using Google Search via Gemini. Returns a grounded answer with source citations.
+
+| Parameter | Type   | Required | Description                                   |
+| --------- | ------ | -------- | --------------------------------------------- |
+| `query`   | string | yes      | The search query to look up on Google (max 1000 chars) |
+
+Returns a text response with the answer grounded in Google Search results, plus a list of source URLs with titles.
+
 ## Setup
 
 ### 1. Get a Gemini API key
@@ -38,7 +48,7 @@ Add the server to your MCP configuration file (e.g. `~/.claude/mcp.json` for Cla
 ```json
 {
   "mcpServers": {
-    "gemini-images": {
+    "gemini": {
       "type": "url",
       "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_GEMINI_API_KEY"
     }
@@ -82,7 +92,7 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
    ```json
    {
      "mcpServers": {
-       "gemini-images": {
+       "gemini": {
          "type": "url",
          "url": "https://your-worker.your-subdomain.workers.dev?apiKey=YOUR_GEMINI_API_KEY"
        }
