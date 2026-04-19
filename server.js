@@ -57,16 +57,31 @@ function extractImage(result) {
   return imagePart?.inlineData?.data ?? null; // already base64
 }
 
-function imageResult(base64Data, aspectRatio) {
+async function uploadToR2(env, base64Data, mimeType) {
+  if (!env?.IMAGE_BUCKET) return null;
+  const key = `images/${crypto.randomUUID()}.png`;
+  const binary = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+  await env.IMAGE_BUCKET.put(key, binary, {
+    httpMetadata: { contentType: mimeType ?? "image/png" }
+  });
+  const publicBase = env.R2_PUBLIC_URL?.replace(/\/$/, "");
+  if (!publicBase) return null;
+  return `${publicBase}/${key}`;
+}
+
+function imageResult(base64Data, aspectRatio, publicUrl) {
+  const label = publicUrl
+    ? `Image generated (${aspectRatio}) — Public URL: ${publicUrl}`
+    : `Image generated (${aspectRatio})`;
   return {
     content: [
       { type: "image", data: base64Data, mimeType: "image/png" },
-      { type: "text", text: `Image generated (${aspectRatio})` }
+      { type: "text", text: label }
     ]
   };
 }
 
-async function handleGenerateImage(ai, args) {
+async function handleGenerateImage(ai, env, args) {
   const parsed = z.object({
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
@@ -87,10 +102,18 @@ async function handleGenerateImage(ai, args) {
   if (!base64Data) {
     return { content: [{ type: "text", text: "No image returned by Gemini. Try a shorter or simpler prompt." }], isError: true };
   }
-  return imageResult(base64Data, parsed.aspect_ratio);
+
+  let publicUrl = null;
+  try {
+    publicUrl = await uploadToR2(env, base64Data, "image/png");
+  } catch {
+    // R2 failure is non-fatal; base64 still returned
+  }
+
+  return imageResult(base64Data, parsed.aspect_ratio, publicUrl);
 }
 
-async function handleEditImage(ai, args) {
+async function handleEditImage(ai, env, args) {
   const parsed = z.object({
     image_data: z.string().min(1),
     mime_type: z.enum(["image/png", "image/jpeg", "image/webp"]).optional().default("image/png"),
@@ -114,7 +137,15 @@ async function handleEditImage(ai, args) {
   if (!base64Data) {
     return { content: [{ type: "text", text: "No image returned by Gemini. Try a different edit prompt." }], isError: true };
   }
-  return imageResult(base64Data, parsed.aspect_ratio || "original");
+
+  let publicUrl = null;
+  try {
+    publicUrl = await uploadToR2(env, base64Data, "image/png");
+  } catch {
+    // R2 failure is non-fatal; base64 still returned
+  }
+
+  return imageResult(base64Data, parsed.aspect_ratio || "original", publicUrl);
 }
 
 async function handleGoogleSearch(ai, args) {
@@ -157,7 +188,7 @@ async function handleGoogleSearch(ai, args) {
   };
 }
 
-function makeHandler(ai) {
+function makeHandler(ai, env) {
   return async function handleMcpMessage(msg) {
     const { jsonrpc, id, method, params } = msg;
     const ok = result => ({ jsonrpc, id, result });
@@ -177,8 +208,8 @@ function makeHandler(ai) {
           return ok({ tools: TOOLS });
         case "tools/call": {
           switch (params.name) {
-            case "generate_image": return ok(await handleGenerateImage(ai, params.arguments));
-            case "edit_image":     return ok(await handleEditImage(ai, params.arguments));
+            case "generate_image": return ok(await handleGenerateImage(ai, env, params.arguments));
+            case "edit_image":     return ok(await handleEditImage(ai, env, params.arguments));
             case "google_search":  return ok(await handleGoogleSearch(ai, params.arguments));
             default: return err(-32601, `Unknown tool: ${params.name}`);
           }
@@ -193,7 +224,7 @@ function makeHandler(ai) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
@@ -207,7 +238,7 @@ export default {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const handleMcpMessage = makeHandler(ai);
+    const handleMcpMessage = makeHandler(ai, env);
 
     const body = await request.json();
     const messages = Array.isArray(body) ? body : [body];
