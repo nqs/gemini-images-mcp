@@ -14,4 +14,4 @@ binding = "IMAGE_BUCKET"
 bucket_name = "gemini-mcp-images"
 
 [vars]
-R2_PUBLIC_URL = "https://pub-XXXXXXXXXXXX.r2.dev"
+R2_PUBLIC_URL = "https://storage.gemini.mcp.nqs.io"
