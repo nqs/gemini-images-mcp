@@ -8,3 +8,10 @@ routes = [
 
 [placement]
 mode = "smart"
+
+[[r2_buckets]]
+binding = "IMAGE_BUCKET"
+bucket_name = "gemini-mcp-images"
+
+[vars]
+R2_PUBLIC_URL = "https://storage.gemini.mcp.nqs.io"

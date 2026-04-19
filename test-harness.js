@@ -200,15 +200,15 @@ async function main() {
       assert(img.data, "image block missing data");
       assert(img.mimeType?.startsWith("image/"), `bad mimeType: ${img.mimeType}`);
       assert(txt, "no text content block returned");
-      assert(txt.text.includes("/"), "text should contain file path");
+      assert(txt.text.startsWith("Image generated"), `unexpected text: ${txt.text}`);
 
-      // Verify the file was actually saved
-      const match = txt.text.match(/Saved.*to (.+?) \(/);
-      if (match) {
-        const savedPath = match[1];
-        const stat = await fs.stat(savedPath);
-        assert(stat.size > 0, "saved file is empty");
-        console.log(`    saved: ${savedPath} (${(stat.size / 1024).toFixed(1)}KB)`);
+      if (txt.text.includes("Public URL:")) {
+        const urlMatch = txt.text.match(/Public URL: (https?:\/\/\S+)/);
+        assert(urlMatch, "Public URL: present but no valid URL found");
+        const url = new URL(urlMatch[1]);
+        assert(url.pathname.startsWith("/images/"), "URL path should be under /images/");
+        assert(url.pathname.endsWith(".png"), "URL should end in .png");
+        console.log(`    r2 url: ${urlMatch[1]}`);
       }
 
       const inlineKB = (Buffer.from(img.data, "base64").length / 1024).toFixed(1);
@@ -263,6 +263,16 @@ async function main() {
       assert(img, "no image content block returned");
       assert(img.data, "image block missing data");
       assert(txt, "no text content block returned");
+      assert(txt.text.startsWith("Image generated"), `unexpected text: ${txt.text}`);
+
+      if (txt.text.includes("Public URL:")) {
+        const urlMatch = txt.text.match(/Public URL: (https?:\/\/\S+)/);
+        assert(urlMatch, "Public URL: present but no valid URL found");
+        const url = new URL(urlMatch[1]);
+        assert(url.pathname.startsWith("/images/"), "URL path should be under /images/");
+        assert(url.pathname.endsWith(".png"), "URL should end in .png");
+        console.log(`    r2 url: ${urlMatch[1]}`);
+      }
 
       const inlineKB = (Buffer.from(img.data, "base64").length / 1024).toFixed(1);
       console.log(`    inline: ${inlineKB}KB, mime: ${img.mimeType}`);
