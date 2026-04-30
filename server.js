@@ -9,7 +9,7 @@ const SEARCH_MODEL = "gemini-2.5-flash";
 const TOOLS = [
   {
     name: "generate_image",
-    description: "Generate an image from a text prompt using Gemini. Returns the image inline as base64.",
+    description: "Generate an image from a text prompt using Gemini. Returns a public hosted URL when storage is configured, otherwise returns the image inline as base64.",
     inputSchema: {
       type: "object",
       properties: {
@@ -22,7 +22,7 @@ const TOOLS = [
   },
   {
     name: "edit_image",
-    description: "Edit an existing image using a text prompt. Pass the image as base64-encoded data.",
+    description: "Edit an existing image using a text prompt. Pass the image as base64-encoded data. Returns a public hosted URL when storage is configured, otherwise returns the edited image inline as base64.",
     inputSchema: {
       type: "object",
       properties: {
@@ -70,13 +70,15 @@ async function uploadToR2(env, base64Data, mimeType) {
 }
 
 function imageResult(base64Data, aspectRatio, publicUrl) {
-  const label = publicUrl
-    ? `Image generated (${aspectRatio}) — Public URL: ${publicUrl}`
-    : `Image generated (${aspectRatio})`;
+  if (publicUrl) {
+    return {
+      content: [{ type: "text", text: `Image generated (${aspectRatio}) — Public URL: ${publicUrl}` }]
+    };
+  }
   return {
     content: [
       { type: "image", data: base64Data, mimeType: "image/png" },
-      { type: "text", text: label }
+      { type: "text", text: `Image generated (${aspectRatio})` }
     ]
   };
 }
