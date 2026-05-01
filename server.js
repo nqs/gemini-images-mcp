@@ -235,13 +235,14 @@ export default {
       });
     }
 
-    // MCP Streamable HTTP spec requires GET to establish an SSE listening stream
-    // for server-to-client notifications. This server has none, so the stream
-    // stays open idle until the client disconnects.
     if (request.method === "GET") {
+      // SSE transport requires an immediate "endpoint" event so the client knows
+      // where to POST JSON-RPC messages. Streamable HTTP clients also use this
+      // stream for server-initiated notifications (none here, stream stays open).
+      const endpointUrl = new URL(request.url).toString();
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
-      writer.write(new TextEncoder().encode(": connected\n\n"));
+      writer.write(new TextEncoder().encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
       return new Response(readable, {
         headers: {
           "Content-Type": "text/event-stream",
