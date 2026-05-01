@@ -226,7 +226,7 @@ function makeHandler(ai, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const apiKey = new URL(request.url).searchParams.get("apiKey");
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
@@ -236,17 +236,32 @@ export default {
     }
 
     if (request.method === "GET") {
-      // SSE transport requires an immediate "endpoint" event so the client knows
-      // where to POST JSON-RPC messages. Streamable HTTP clients also use this
-      // stream for server-initiated notifications (none here, stream stays open).
+      // SSE transport: send endpoint event immediately, then keep the stream
+      // alive with periodic heartbeats. Without ctx.waitUntil the writer gets
+      // GC'd when fetch() returns and the connection closes, causing the
+      // client to see a flapping connection.
       const endpointUrl = new URL(request.url).toString();
+      const encoder = new TextEncoder();
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
-      writer.write(new TextEncoder().encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
+      await writer.write(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
+
+      ctx.waitUntil((async () => {
+        try {
+          while (true) {
+            await new Promise(r => setTimeout(r, 25000));
+            await writer.write(encoder.encode(`: ping\n\n`));
+          }
+        } catch {
+          // client disconnected; stream is dead
+        }
+      })());
+
       return new Response(readable, {
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no",
         }
       });
     }
