@@ -227,77 +227,73 @@ function makeHandler(ai, env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const apiKey = new URL(request.url).searchParams.get("apiKey");
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    if (request.method === "GET") {
-      // SSE transport: send endpoint event immediately, then keep the stream
-      // alive with periodic heartbeats. Without ctx.waitUntil the writer gets
-      // GC'd when fetch() returns and the connection closes, causing the
-      // client to see a flapping connection.
-      const endpointUrl = new URL(request.url).toString();
-      const encoder = new TextEncoder();
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-      await writer.write(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
-
-      ctx.waitUntil((async () => {
-        try {
-          while (true) {
-            await new Promise(r => setTimeout(r, 25000));
-            await writer.write(encoder.encode(`: ping\n\n`));
-          }
-        } catch {
-          // client disconnected; stream is dead
-        }
-      })());
-
-      return new Response(readable, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "X-Accel-Buffering": "no",
-        }
-      });
-    }
-
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const handleMcpMessage = makeHandler(ai, env);
-
-    const body = await request.json();
-    const messages = Array.isArray(body) ? body : [body];
-    const responses = (await Promise.all(messages.map(handleMcpMessage))).filter(r => r !== null);
-
-    // MCP Streamable HTTP spec: return SSE when client accepts it, JSON otherwise.
-    // AnythingLLM (type: "streamable") sends Accept: text/event-stream on POST.
-    // Claude Desktop (type: "url") expects plain JSON.
-    const acceptsSSE = request.headers.get("Accept")?.includes("text/event-stream");
-    if (acceptsSSE) {
-      const encoder = new TextEncoder();
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-      for (const r of responses) {
-        writer.write(encoder.encode(`event: message\ndata: ${JSON.stringify(r)}\n\n`));
+    try {
+      const apiKey = new URL(request.url).searchParams.get("apiKey");
+      if (!apiKey) {
+        return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-      writer.close();
-      return new Response(readable, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" }
-      });
-    }
 
-    if (!Array.isArray(body)) {
-      if (responses.length === 0) return new Response(null, { status: 204 });
-      return new Response(JSON.stringify(responses[0]), { headers: { "Content-Type": "application/json" } });
+      if (request.method === "GET") {
+        const endpointUrl = new URL(request.url).toString();
+        const encoder = new TextEncoder();
+
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
+            controller.enqueue(encoder.encode(`: connected\n\n`));
+          },
+          async pull(controller) {
+            await new Promise(r => setTimeout(r, 25000));
+            try {
+              controller.enqueue(encoder.encode(`: ping\n\n`));
+            } catch {}
+          },
+          cancel() {}
+        });
+
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+          }
+        });
+      }
+
+      if (request.method !== "POST") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const handleMcpMessage = makeHandler(ai, env);
+
+      const body = await request.json();
+      const messages = Array.isArray(body) ? body : [body];
+      const responses = (await Promise.all(messages.map(handleMcpMessage))).filter(r => r !== null);
+
+      const acceptsSSE = request.headers.get("Accept")?.includes("text/event-stream");
+      if (acceptsSSE) {
+        const encoder = new TextEncoder();
+        const sseBody = responses.map(r => `event: message\ndata: ${JSON.stringify(r)}\n\n`).join("");
+        return new Response(encoder.encode(sseBody), {
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" }
+        });
+      }
+
+      if (!Array.isArray(body)) {
+        if (responses.length === 0) return new Response(null, { status: 204 });
+        return new Response(JSON.stringify(responses[0]), { headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify(responses), { headers: { "Content-Type": "application/json" } });
+    } catch (err) {
+      return new Response(JSON.stringify({
+        error: err?.message ?? String(err),
+        stack: err?.stack,
+        name: err?.name
+      }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify(responses), { headers: { "Content-Type": "application/json" } });
   }
 };
