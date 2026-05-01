@@ -227,16 +227,31 @@ function makeHandler(ai, env) {
 
 export default {
   async fetch(request, env) {
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", { status: 405 });
-    }
-
     const apiKey = new URL(request.url).searchParams.get("apiKey");
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
         status: 401,
         headers: { "Content-Type": "application/json" }
       });
+    }
+
+    // MCP Streamable HTTP spec requires GET to establish an SSE listening stream
+    // for server-to-client notifications. This server has none, so the stream
+    // stays open idle until the client disconnects.
+    if (request.method === "GET") {
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      writer.write(new TextEncoder().encode(": connected\n\n"));
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        }
+      });
+    }
+
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405 });
     }
 
     const ai = new GoogleGenAI({ apiKey });
