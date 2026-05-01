@@ -261,6 +261,23 @@ export default {
     const messages = Array.isArray(body) ? body : [body];
     const responses = (await Promise.all(messages.map(handleMcpMessage))).filter(r => r !== null);
 
+    // MCP Streamable HTTP spec: return SSE when client accepts it, JSON otherwise.
+    // AnythingLLM (type: "streamable") sends Accept: text/event-stream on POST.
+    // Claude Desktop (type: "url") expects plain JSON.
+    const acceptsSSE = request.headers.get("Accept")?.includes("text/event-stream");
+    if (acceptsSSE) {
+      const encoder = new TextEncoder();
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      for (const r of responses) {
+        writer.write(encoder.encode(`event: message\ndata: ${JSON.stringify(r)}\n\n`));
+      }
+      writer.close();
+      return new Response(readable, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" }
+      });
+    }
+
     if (!Array.isArray(body)) {
       if (responses.length === 0) return new Response(null, { status: 204 });
       return new Response(JSON.stringify(responses[0]), { headers: { "Content-Type": "application/json" } });
