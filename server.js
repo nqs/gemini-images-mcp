@@ -206,6 +206,8 @@ function makeHandler(ai, env) {
           });
         case "notifications/initialized":
           return null;
+        case "ping":
+          return ok({});
         case "tools/list":
           return ok({ tools: TOOLS });
         case "tools/call": {
