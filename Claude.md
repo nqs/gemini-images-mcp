@@ -139,6 +139,27 @@ The harness executes the MCP server and performs JSON-RPC interactions over stdi
 - Input validated by `zod` in `server.js`.
 - Empty prompt/query rejects with error.
 
+## Remote HTTP transport (Cloudflare Worker deployment)
+
+When deployed as a Cloudflare Worker, this server speaks the **Streamable HTTP** MCP transport (spec 2025-03-26), not the legacy HTTP+SSE transport. POST returns the JSON-RPC response inline (as `application/json` or `text/event-stream` depending on the `Accept` header); GET returns a keep-alive notification stream; notification-only POSTs return `202 Accepted`.
+
+Stateless `SSEClientTransport` (legacy `event: endpoint` + push-via-SSE) is **not** supported because correlating the GET stream with subsequent POSTs would require Cloudflare Durable Objects.
+
+### AnythingLLM configuration
+
+In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using `sse` (or omitting `type`, which defaults to `sse`) will produce `Failed to start MCP server: gemini {"error":"Connection timeout"}` after 30 s.
+
+```json
+{
+  "mcpServers": {
+    "gemini": {
+      "type": "streamable",
+      "url": "https://gemini.mcp.nqs.io/?apiKey=AIza..."
+    }
+  }
+}
+```
+
 ## Notes
 
 - Image tools use Gemini model `gemini-3-pro-image-preview` with `TEXT`+`IMAGE` modalities.

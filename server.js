@@ -237,12 +237,10 @@ export default {
       }
 
       if (request.method === "GET") {
-        const endpointUrl = new URL(request.url).toString();
         const encoder = new TextEncoder();
 
         const stream = new ReadableStream({
           start(controller) {
-            controller.enqueue(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
             controller.enqueue(encoder.encode(`: connected\n\n`));
           },
           async pull(controller) {
@@ -274,6 +272,10 @@ export default {
       const messages = Array.isArray(body) ? body : [body];
       const responses = (await Promise.all(messages.map(handleMcpMessage))).filter(r => r !== null);
 
+      if (responses.length === 0) {
+        return new Response(null, { status: 202 });
+      }
+
       const acceptsSSE = request.headers.get("Accept")?.includes("text/event-stream");
       if (acceptsSSE) {
         const encoder = new TextEncoder();
@@ -284,7 +286,6 @@ export default {
       }
 
       if (!Array.isArray(body)) {
-        if (responses.length === 0) return new Response(null, { status: 204 });
         return new Response(JSON.stringify(responses[0]), { headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify(responses), { headers: { "Content-Type": "application/json" } });
