@@ -12,7 +12,8 @@ const TOOLS = [
       properties: {
         prompt: { type: "string", description: "Image description. Photorealistic, art, diagrams, etc." },
         aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Image aspect ratio (default: 1:1)" },
-        style: { type: "string", enum: STYLES, description: "Art style to apply" }
+        style: { type: "string", enum: STYLES, description: "Art style to apply" },
+        model: { type: "string", description: "OpenRouter image model (default: black-forest-labs/flux.2-klein-4b)" }
       },
       required: ["prompt"]
     }
@@ -56,8 +57,8 @@ function getOpenRouterSizeFromAspectRatio(ar) {
   return map[ar] || "1024x1024";
 }
 
-async function generateImageViaOpenRouter(prompt, aspectRatio, style, apiKey) {
-  const model = "black-forest-labs/flux.2-klein-4b";
+async function generateImageViaOpenRouter(prompt, aspectRatio, style, model, apiKey) {
+  const selectedModel = model || "black-forest-labs/flux.2-klein-4b";
   
   const fullPrompt = style
     ? `${style}, ${prompt}, high quality, detailed`
@@ -71,7 +72,7 @@ async function generateImageViaOpenRouter(prompt, aspectRatio, style, apiKey) {
   };
 
   const payload = {
-    model: model,
+    model: selectedModel,
     prompt: fullPrompt,
     size: getOpenRouterSizeFromAspectRatio(aspectRatio || "1:1")
   };
@@ -102,7 +103,8 @@ async function handleGenerateImage(apiKey, args) {
   const parsed = z.object({
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
-    style: z.enum(STYLES).optional()
+    style: z.enum(STYLES).optional(),
+    model: z.string().optional()
   }).parse(args);
 
   try {
@@ -110,6 +112,7 @@ async function handleGenerateImage(apiKey, args) {
       parsed.prompt,
       parsed.aspect_ratio,
       parsed.style,
+      parsed.model,
       apiKey
     );
 

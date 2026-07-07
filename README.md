@@ -13,6 +13,7 @@ Generate an image from a text prompt.
 | `prompt`       | string | yes      | Image description (max 1500 chars)                                 |
 | `aspect_ratio` | string | no       | `1:1` (default), `16:9`, `9:16`, `4:3`, or `3:4`                  |
 | `style`        | string | no       | `photorealistic`, `digital art`, `line drawing`, or `diagram`      |
+| `model`        | string | no       | OpenRouter image model (default: `black-forest-labs/flux.2-klein-4b`) |
 
 ## Setup
 
@@ -97,7 +98,7 @@ npm test       # runs the test suite
 
 ## Image Generation Model
 
-This server uses `google/gemini-3.1-flash-lite-image` via OpenRouter for image generation.
+This server uses `black-forest-labs/flux.2-klein-4b` via OpenRouter for image generation by default. You can specify a different model via the `model` parameter in the `generate_image` tool call.
 
 ## License
 

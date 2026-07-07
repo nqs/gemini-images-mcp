@@ -101,7 +101,7 @@ In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using 
 
 ## Notes
 
-- Image tool uses OpenRouter with model `google/gemini-3.1-flash-lite-image`.
+- Image tool uses OpenRouter with configurable model (default: `black-forest-labs/flux.2-klein-4b`).
 - Set `OPENROUTER_API_KEY` environment variable or pass via `?apiKey=` query parameter.
 
 ## Commands
