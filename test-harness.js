@@ -31,7 +31,7 @@ class McpClient {
   async start() {
     this.proc = spawn("node", [this.serverPath], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "sk-or-test" },
     });
 
     this.proc.stderr.on("data", (chunk) => {
