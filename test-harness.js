@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
-const TIMEOUT_MS = 60_000; // Hugging Face can be slow
+const TIMEOUT_MS = 60_000; // OpenRouter can be slow
 
 // ── JSON-RPC client over stdio ──────────────────────────────────────────────
 

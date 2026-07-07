@@ -56,39 +56,49 @@ function getOpenRouterSizeFromAspectRatio(ar) {
   return map[ar] || "1024x1024";
 }
 
-async function generateImageViaPollinations(prompt, aspectRatio, style, env) {
+async function generateImageViaOpenRouter(prompt, aspectRatio, style, apiKey) {
+  const model = "black-forest-labs/flux.2-klein-4b";
+  
   const fullPrompt = style
     ? `${style}, ${prompt}, high quality, detailed`
     : `${prompt}, high quality, detailed`;
 
-  // Encode prompt for URL
-  const encodedPrompt = encodeURIComponent(fullPrompt);
-
-  // Map aspect ratio to dimensions
-  const dimensions = {
-    "1:1": "1024x1024",
-    "16:9": "1536x1024",
-    "9:16": "1024x1536",
-    "4:3": "1152x864",
-    "3:4": "864x1152"
+  const headers = {
+    "Authorization": `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://gemini.mcp.nqs.io",
+    "X-Title": "Gemini Image MCP"
   };
-  const [width, height] = (dimensions[aspectRatio || "1:1"] || "1024x1024").split("x");
 
-  // Pollinations API: https://image.pollinations.ai/prompt/{prompt}?width={w}&height={h}
-  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true`;
+  const payload = {
+    model: model,
+    prompt: fullPrompt,
+    size: getOpenRouterSizeFromAspectRatio(aspectRatio || "1:1")
+  };
 
-  const response = await fetch(url);
+  const response = await fetch("https://openrouter.ai/api/v1/images", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
 
   if (!response.ok) {
-    throw new Error(`Image generation failed: ${response.statusText}`);
+    const errorText = await response.text();
+    let errorData;
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { error: { message: errorText } };
+    }
+    throw new Error(`OpenRouter error: ${errorData.error?.message || response.statusText}`);
   }
 
-  const imageData = await response.arrayBuffer();
-  const base64Data = Buffer.from(imageData).toString("base64");
-  return `data:image/png;base64,${base64Data}`;
+  const data = await response.json();
+  // OpenRouter returns { data: [{ url: "...", b64_json: "..." }] }
+  return data.data?.[0]?.b64_json || null;
 }
 
-async function handleGenerateImage(env, args) {
+async function handleGenerateImage(apiKey, args) {
   const parsed = z.object({
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
@@ -96,34 +106,31 @@ async function handleGenerateImage(env, args) {
   }).parse(args);
 
   try {
-    const base64Data = await generateImageViaPollinations(
+    const base64Data = await generateImageViaOpenRouter(
       parsed.prompt,
       parsed.aspect_ratio,
       parsed.style,
-      env
+      apiKey
     );
 
     if (!base64Data) {
       return { content: [{ type: "text", text: "No image returned." }], isError: true };
     }
 
-    // Strip data URL prefix for storage
-    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
-
     let publicUrl = null;
     try {
-      publicUrl = await uploadToR2(env, cleanBase64, "image/png");
+      publicUrl = await uploadToR2(null, base64Data, "image/png");
     } catch {
       // R2 failure is non-fatal; base64 still returned
     }
 
-    return imageResult(cleanBase64, parsed.aspect_ratio, publicUrl);
+    return imageResult(base64Data, parsed.aspect_ratio, publicUrl);
   } catch (err) {
     return { content: [{ type: "text", text: `Image generation failed: ${err.message}` }], isError: true };
   }
 }
 
-function makeHandler(env) {
+function makeHandler(apiKey) {
   return async function handleMcpMessage(msg) {
     const { jsonrpc, id, method, params } = msg;
     const ok = result => ({ jsonrpc, id, result });
@@ -145,7 +152,7 @@ function makeHandler(env) {
           return ok({ tools: TOOLS });
         case "tools/call": {
           switch (params.name) {
-            case "generate_image": return ok(await handleGenerateImage(env, params.arguments));
+            case "generate_image": return ok(await handleGenerateImage(apiKey, params.arguments));
             default: return err(-32601, `Unknown tool: ${params.name}`);
           }
         }
@@ -161,6 +168,14 @@ function makeHandler(env) {
 export default {
   async fetch(request, env, ctx) {
     try {
+      const apiKey = new URL(request.url).searchParams.get("apiKey");
+      if (!apiKey) {
+        return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       if (request.method === "GET") {
         const encoder = new TextEncoder();
 
@@ -190,7 +205,7 @@ export default {
         return new Response("Method not allowed", { status: 405 });
       }
 
-      const handleMcpMessage = makeHandler(env);
+      const handleMcpMessage = makeHandler(apiKey);
 
       const body = await request.json();
       const messages = Array.isArray(body) ? body : [body];
@@ -225,12 +240,14 @@ export default {
 
 // Stdio transport for local testing
 if (import.meta.main) {
-  const env = {
-    IMAGE_BUCKET: null,
-    R2_PUBLIC_URL: null
-  };
+  const apiKey = process.env.OPENROUTER_API_KEY || "";
+  
+  if (!apiKey) {
+    console.error("OPENROUTER_API_KEY environment variable is required");
+    process.exit(1);
+  }
 
-  const handleMcpMessage = makeHandler(env);
+  const handleMcpMessage = makeHandler(apiKey);
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 

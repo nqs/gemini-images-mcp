@@ -1,17 +1,23 @@
-# Gemini Image MCP
+# Gemini Image MCP (OpenRouter Integration)
 
-This repository exposes a Model Context Protocol (MCP) tool wrapper around image generation. Use `server.js` with MCP clients (including Anthropic Claude agents / Claude CLI) by calling tools via `tools/list` and `tools/call`.
+This repository exposes a Model Context Protocol (MCP) tool wrapper around OpenRouter image generation. Use `server.js` with MCP clients (including Anthropic Claude agents / Claude CLI) by calling tools via `tools/list` and `tools/call`.
 
 ## Quick start
 
-1. Install and run:
+1. Set API key:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+```
+
+2. Install and run:
 
 ```bash
 npm install
 npm start
 ```
 
-2. Confirm tools:
+3. Confirm tools:
 
 ```bash
 node test-harness.js list
@@ -20,7 +26,7 @@ node test-harness.js list
 ## Tool list (MCP metadata)
 
 ### generate_image
-- description: Generate an image from a text prompt. Returns the image inline as base64.
+- description: Generate an image from a text prompt via OpenRouter
 - inputSchema:
   - prompt (string, required)
   - aspect_ratio (string, optional; enum: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`; default `1:1`)
@@ -87,7 +93,7 @@ In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using 
   "mcpServers": {
     "gemini": {
       "type": "streamable",
-      "url": "https://gemini.mcp.nqs.io"
+      "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
     }
   }
 }
@@ -95,7 +101,8 @@ In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using 
 
 ## Notes
 
-- Image tool uses Pollinations.ai for free, no-key-required image generation.
+- Image tool uses OpenRouter with model `google/gemini-3.1-flash-lite-image`.
+- Set `OPENROUTER_API_KEY` environment variable or pass via `?apiKey=` query parameter.
 
 ## Commands
 

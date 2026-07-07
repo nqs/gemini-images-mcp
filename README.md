@@ -1,6 +1,6 @@
 # gemini-image-mcp
 
-An MCP server that provides image generation tools. Runs on Cloudflare Workers.
+An MCP server that provides image generation tools powered by OpenRouter. Runs on Cloudflare Workers.
 
 ## Tools
 
@@ -16,6 +16,10 @@ Generate an image from a text prompt.
 
 ## Setup
 
+### 1. Get an OpenRouter API key
+
+Create an API key at [OpenRouter](https://openrouter.ai/).
+
 ### 2. Configure your MCP client
 
 Add the server to your MCP configuration file (e.g. `~/.claude/mcp.json` for Claude Code, `claude_desktop_config.json` for Claude Desktop):
@@ -25,13 +29,13 @@ Add the server to your MCP configuration file (e.g. `~/.claude/mcp.json` for Cla
   "mcpServers": {
     "gemini": {
       "type": "url",
-      "url": "https://gemini.mcp.nqs.io"
+      "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
     }
   }
 }
 ```
 
-The hosted version uses a pre-configured image generation backend.
+Replace `YOUR_OPENROUTER_API_KEY` with your actual OpenRouter API key.
 
 ## Self-hosting
 
@@ -41,6 +45,7 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
 
 - Node.js >= 20
 - A [Cloudflare](https://www.cloudflare.com/) account
+- An [OpenRouter](https://openrouter.ai/) API key
 
 ### Deploy
 
@@ -52,9 +57,16 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
    npm install
    ```
 
-2. Update `wrangler.toml` with your own domain or remove the `routes` section to use the default `*.workers.dev` subdomain.
+2. Set your OpenRouter API key as a Wrangler secret:
 
-3. Deploy with Wrangler:
+   ```bash
+   npx wrangler secret put OPENROUTER_API_KEY
+   # Paste your OpenRouter API key when prompted
+   ```
+
+3. Update `wrangler.toml` with your own domain or remove the `routes` section to use the default `*.workers.dev` subdomain.
+
+4. Deploy with Wrangler:
 
    ```bash
    npx wrangler deploy
@@ -62,14 +74,14 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
 
    Or push to `main` to trigger the included GitHub Actions workflow (requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets).
 
-4. Point your MCP config at your deployed URL:
+5. Point your MCP config at your deployed URL:
 
    ```json
    {
      "mcpServers": {
        "gemini": {
          "type": "url",
-         "url": "https://your-worker.your-subdomain.workers.dev"
+         "url": "https://your-worker.your-subdomain.workers.dev?apiKey=YOUR_OPENROUTER_API_KEY"
        }
      }
    }
@@ -78,13 +90,14 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
 ## Local development
 
 ```bash
+export OPENROUTER_API_KEY="your-openrouter-key-here"
 npm run dev    # starts server with file watcher
 npm test       # runs the test suite
 ```
 
-## Image Generation Backend
+## Image Generation Model
 
-This server uses [Pollinations.ai](https://pollinations.ai/) for free, no-key-required image generation.
+This server uses `google/gemini-3.1-flash-lite-image` via OpenRouter for image generation.
 
 ## License
 
