@@ -7,7 +7,6 @@
  * Usage:
  *   node test-harness.js                  # run all tests
  *   node test-harness.js generate         # run only generate tests
- *   node test-harness.js edit             # run only edit tests
  *   node test-harness.js list             # just list available tools
  */
 
@@ -16,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
-const TIMEOUT_MS = 60_000; // Gemini can be slow
+const TIMEOUT_MS = 60_000; // Hugging Face can be slow
 
 // ── JSON-RPC client over stdio ──────────────────────────────────────────────
 
@@ -147,23 +146,10 @@ function contentOfType(result, type) {
   return result.content?.find((c) => c.type === type);
 }
 
-// ── Create a tiny test image for edit tests ─────────────────────────────────
-
-async function createTestImage() {
-  // 1x1 red PNG (minimal valid PNG)
-  const buf = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-    "base64"
-  );
-  const tmpPath = path.join(os.tmpdir(), "test-harness-input.png");
-  await fs.writeFile(tmpPath, buf);
-  return tmpPath;
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  const filter = process.argv[2]; // optional: "generate", "edit", "list"
+  const filter = process.argv[2]; // optional: "generate", "list"
   const client = new McpClient(path.resolve("server.js"));
 
   console.log("Starting MCP server...");
@@ -176,8 +162,6 @@ async function main() {
       const result = await client.request("tools/list");
       const names = result.tools.map((t) => t.name);
       assert(names.includes("generate_image"), "missing generate_image");
-      assert(names.includes("edit_image"), "missing edit_image");
-      assert(names.includes("google_search"), "missing google_search");
       console.log(`    tools: ${names.join(", ")}`);
     });
   }
@@ -240,88 +224,6 @@ async function main() {
         // If we get here, the server returned a result (possibly isError)
       } catch {
         // Expected - validation should reject empty prompt
-      }
-    });
-  }
-
-  // ── Edit tests ──────────────────────────────────────────────────────────
-  if (!filter || filter === "edit") {
-    const testImagePath = await createTestImage();
-
-    await test("edit_image modifies an existing image", async () => {
-      const result = await client.request("tools/call", {
-        name: "edit_image",
-        arguments: {
-          image_path: testImagePath,
-          prompt: "Make this image blue instead of red",
-        },
-      });
-
-      const img = contentOfType(result, "image");
-      const txt = contentOfType(result, "text");
-
-      assert(img, "no image content block returned");
-      assert(img.data, "image block missing data");
-      assert(txt, "no text content block returned");
-      assert(txt.text.startsWith("Image generated"), `unexpected text: ${txt.text}`);
-
-      if (txt.text.includes("Public URL:")) {
-        const urlMatch = txt.text.match(/Public URL: (https?:\/\/\S+)/);
-        assert(urlMatch, "Public URL: present but no valid URL found");
-        const url = new URL(urlMatch[1]);
-        assert(url.pathname.startsWith("/images/"), "URL path should be under /images/");
-        assert(url.pathname.endsWith(".png"), "URL should end in .png");
-        console.log(`    r2 url: ${urlMatch[1]}`);
-      }
-
-      const inlineKB = (Buffer.from(img.data, "base64").length / 1024).toFixed(1);
-      console.log(`    inline: ${inlineKB}KB, mime: ${img.mimeType}`);
-    });
-
-    await test("edit_image with bad path returns error", async () => {
-      try {
-        const result = await client.request("tools/call", {
-          name: "edit_image",
-          arguments: {
-            image_path: "/nonexistent/image.png",
-            prompt: "make it blue",
-          },
-        });
-        assert(result.isError, "should have returned isError for bad path");
-      } catch {
-        // Also acceptable - server may throw
-      }
-    });
-
-    // Cleanup
-    await fs.unlink(testImagePath).catch(() => {});
-  }
-
-  // ── Search tests ────────────────────────────────────────────────────────
-  if (!filter || filter === "search") {
-    await test("google_search returns text with results", async () => {
-      const result = await client.request("tools/call", {
-        name: "google_search",
-        arguments: {
-          query: "What is the capital of France?",
-        },
-      });
-
-      const txt = contentOfType(result, "text");
-      assert(txt, "no text content block returned");
-      assert(txt.text.length > 0, "text response is empty");
-      assert(!result.isError, "request returned an error");
-      console.log(`    response length: ${txt.text.length} chars`);
-    });
-
-    await test("google_search with empty query returns error", async () => {
-      try {
-        await client.request("tools/call", {
-          name: "google_search",
-          arguments: { query: "" },
-        });
-      } catch {
-        // Expected - validation should reject empty query
       }
     });
   }

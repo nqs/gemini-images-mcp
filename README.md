@@ -1,6 +1,6 @@
 # gemini-image-mcp
 
-An MCP server that provides image generation, editing, and Google web search tools powered by Google's Gemini models. Runs on Cloudflare Workers.
+An MCP server that provides image generation tools. Runs on Cloudflare Workers.
 
 ## Tools
 
@@ -14,32 +14,7 @@ Generate an image from a text prompt.
 | `aspect_ratio` | string | no       | `1:1` (default), `16:9`, `9:16`, `4:3`, or `3:4`                  |
 | `style`        | string | no       | `photorealistic`, `digital art`, `line drawing`, or `diagram`      |
 
-### `edit_image`
-
-Edit an existing image using a text prompt.
-
-| Parameter      | Type   | Required | Description                                                        |
-| -------------- | ------ | -------- | ------------------------------------------------------------------ |
-| `image_data`   | string | yes      | Base64-encoded image data                                          |
-| `prompt`       | string | yes      | Description of the edits to make (max 1500 chars)                  |
-| `mime_type`    | string | no       | `image/png` (default), `image/jpeg`, or `image/webp`              |
-| `aspect_ratio` | string | no       | Output aspect ratio (preserves original if omitted)                |
-
-### `google_search`
-
-Search the web using Google Search via Gemini. Returns a grounded answer with source citations.
-
-| Parameter | Type   | Required | Description                                   |
-| --------- | ------ | -------- | --------------------------------------------- |
-| `query`   | string | yes      | The search query to look up on Google (max 1000 chars) |
-
-Returns a text response with the answer grounded in Google Search results, plus a list of source URLs with titles.
-
 ## Setup
-
-### 1. Get a Gemini API key
-
-Create an API key at [Google AI Studio](https://aistudio.google.com/apikey).
 
 ### 2. Configure your MCP client
 
@@ -50,13 +25,13 @@ Add the server to your MCP configuration file (e.g. `~/.claude/mcp.json` for Cla
   "mcpServers": {
     "gemini": {
       "type": "url",
-      "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_GEMINI_API_KEY"
+      "url": "https://gemini.mcp.nqs.io"
     }
   }
 }
 ```
 
-Replace `YOUR_GEMINI_API_KEY` with your actual key.
+The hosted version uses a pre-configured image generation backend.
 
 ## Self-hosting
 
@@ -94,7 +69,7 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
      "mcpServers": {
        "gemini": {
          "type": "url",
-         "url": "https://your-worker.your-subdomain.workers.dev?apiKey=YOUR_GEMINI_API_KEY"
+         "url": "https://your-worker.your-subdomain.workers.dev"
        }
      }
    }
@@ -103,10 +78,13 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
 ## Local development
 
 ```bash
-export GEMINI_API_KEY="YOUR_KEY"
 npm run dev    # starts server with file watcher
 npm test       # runs the test suite
 ```
+
+## Image Generation Backend
+
+This server uses [Pollinations.ai](https://pollinations.ai/) for free, no-key-required image generation.
 
 ## License
 

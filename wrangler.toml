@@ -1,6 +1,7 @@
 name = "gemini-image-mcp"
 main = "server.js"
 compatibility_date = "2025-04-01"
+description = "MCP server for image generation via Pollinations.ai"
 
 routes = [
   { pattern = "gemini.mcp.nqs.io", custom_domain = true }

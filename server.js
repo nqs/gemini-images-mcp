@@ -1,15 +1,12 @@
-import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
 const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 const STYLES = ["photorealistic", "digital art", "line drawing", "diagram"];
-const IMAGE_MODEL = "gemini-3-pro-image-preview";
-const SEARCH_MODEL = "gemini-2.5-flash";
 
 const TOOLS = [
   {
     name: "generate_image",
-    description: "Generate an image from a text prompt using Gemini. Returns a public hosted URL when storage is configured, otherwise returns the image inline as base64.",
+    description: "Generate an image from a text prompt. Returns the image inline as base64.",
     inputSchema: {
       type: "object",
       properties: {
@@ -19,43 +16,8 @@ const TOOLS = [
       },
       required: ["prompt"]
     }
-  },
-  {
-    name: "edit_image",
-    description: "Edit an existing image using a text prompt. Pass the image as base64-encoded data. Returns a public hosted URL when storage is configured, otherwise returns the edited image inline as base64.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        image_data: { type: "string", description: "Base64-encoded image data" },
-        mime_type: {
-          type: "string",
-          enum: ["image/png", "image/jpeg", "image/webp"],
-          description: "MIME type of the input image (default: image/png)"
-        },
-        prompt: { type: "string", description: "Description of the edits to make" },
-        aspect_ratio: { type: "string", enum: ASPECT_RATIOS, description: "Output aspect ratio (default: preserves original)" }
-      },
-      required: ["image_data", "prompt"]
-    }
-  },
-  {
-    name: "google_search",
-    description: "Search the web using Google Search via Gemini. Returns a grounded answer with source citations. Useful for finding current information, facts, news, and real-time data.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "The search query to look up on Google" }
-      },
-      required: ["query"]
-    }
   }
 ];
-
-function extractImage(result) {
-  const parts = result.candidates?.[0]?.content?.parts || [];
-  const imagePart = parts.find(p => p.inlineData?.data);
-  return imagePart?.inlineData?.data ?? null; // already base64
-}
 
 async function uploadToR2(env, base64Data, mimeType) {
   if (!env?.IMAGE_BUCKET) return null;
@@ -83,114 +45,85 @@ function imageResult(base64Data, aspectRatio, publicUrl) {
   };
 }
 
-async function handleGenerateImage(ai, env, args) {
+function getOpenRouterSizeFromAspectRatio(ar) {
+  const map = {
+    "1:1": "1024x1024",
+    "16:9": "1536x1024",
+    "9:16": "1024x1536",
+    "4:3": "1152x864",
+    "3:4": "864x1152"
+  };
+  return map[ar] || "1024x1024";
+}
+
+async function generateImageViaPollinations(prompt, aspectRatio, style, env) {
+  const fullPrompt = style
+    ? `${style}, ${prompt}, high quality, detailed`
+    : `${prompt}, high quality, detailed`;
+
+  // Encode prompt for URL
+  const encodedPrompt = encodeURIComponent(fullPrompt);
+
+  // Map aspect ratio to dimensions
+  const dimensions = {
+    "1:1": "1024x1024",
+    "16:9": "1536x1024",
+    "9:16": "1024x1536",
+    "4:3": "1152x864",
+    "3:4": "864x1152"
+  };
+  const [width, height] = (dimensions[aspectRatio || "1:1"] || "1024x1024").split("x");
+
+  // Pollinations API: https://image.pollinations.ai/prompt/{prompt}?width={w}&height={h}
+  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Image generation failed: ${response.statusText}`);
+  }
+
+  const imageData = await response.arrayBuffer();
+  const base64Data = Buffer.from(imageData).toString("base64");
+  return `data:image/png;base64,${base64Data}`;
+}
+
+async function handleGenerateImage(env, args) {
   const parsed = z.object({
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
     style: z.enum(STYLES).optional()
   }).parse(args);
 
-  const fullPrompt = parsed.style
-    ? `${parsed.style}, ${parsed.prompt}, high quality, detailed`
-    : `${parsed.prompt}, high quality, detailed`;
-
-  const result = await ai.models.generateContent({
-    model: IMAGE_MODEL,
-    contents: fullPrompt,
-    config: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: parsed.aspect_ratio } },
-  });
-
-  const base64Data = extractImage(result);
-  if (!base64Data) {
-    return { content: [{ type: "text", text: "No image returned by Gemini. Try a shorter or simpler prompt." }], isError: true };
-  }
-
-  let publicUrl = null;
   try {
-    publicUrl = await uploadToR2(env, base64Data, "image/png");
-  } catch {
-    // R2 failure is non-fatal; base64 still returned
-  }
+    const base64Data = await generateImageViaPollinations(
+      parsed.prompt,
+      parsed.aspect_ratio,
+      parsed.style,
+      env
+    );
 
-  return imageResult(base64Data, parsed.aspect_ratio, publicUrl);
+    if (!base64Data) {
+      return { content: [{ type: "text", text: "No image returned." }], isError: true };
+    }
+
+    // Strip data URL prefix for storage
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
+
+    let publicUrl = null;
+    try {
+      publicUrl = await uploadToR2(env, cleanBase64, "image/png");
+    } catch {
+      // R2 failure is non-fatal; base64 still returned
+    }
+
+    return imageResult(cleanBase64, parsed.aspect_ratio, publicUrl);
+  } catch (err) {
+    return { content: [{ type: "text", text: `Image generation failed: ${err.message}` }], isError: true };
+  }
 }
 
-async function handleEditImage(ai, env, args) {
-  const parsed = z.object({
-    image_data: z.string().min(1),
-    mime_type: z.enum(["image/png", "image/jpeg", "image/webp"]).optional().default("image/png"),
-    prompt: z.string().min(1).max(1500),
-    aspect_ratio: z.enum(ASPECT_RATIOS).optional()
-  }).parse(args);
-
-  const config = { responseModalities: ["TEXT", "IMAGE"] };
-  if (parsed.aspect_ratio) config.imageConfig = { aspectRatio: parsed.aspect_ratio };
-
-  const result = await ai.models.generateContent({
-    model: IMAGE_MODEL,
-    contents: [
-      { text: parsed.prompt },
-      { inlineData: { mimeType: parsed.mime_type, data: parsed.image_data } },
-    ],
-    config,
-  });
-
-  const base64Data = extractImage(result);
-  if (!base64Data) {
-    return { content: [{ type: "text", text: "No image returned by Gemini. Try a different edit prompt." }], isError: true };
-  }
-
-  let publicUrl = null;
-  try {
-    publicUrl = await uploadToR2(env, base64Data, "image/png");
-  } catch {
-    // R2 failure is non-fatal; base64 still returned
-  }
-
-  return imageResult(base64Data, parsed.aspect_ratio || "original", publicUrl);
-}
-
-async function handleGoogleSearch(ai, args) {
-  const parsed = z.object({
-    query: z.string().min(1).max(1000),
-  }).parse(args);
-
-  const result = await ai.models.generateContent({
-    model: SEARCH_MODEL,
-    contents: parsed.query,
-    config: {
-      tools: [{ googleSearch: {} }],
-    },
-  });
-
-  const text = result.candidates?.[0]?.content?.parts
-    ?.filter(p => p.text)
-    .map(p => p.text)
-    .join("") || "";
-
-  const metadata = result.candidates?.[0]?.groundingMetadata;
-  const chunks = metadata?.groundingChunks || [];
-  const sources = chunks
-    .filter(c => c.web)
-    .map(c => ({ title: c.web.title, url: c.web.uri }));
-
-  const uniqueSources = sources.filter(
-    (s, i, arr) => arr.findIndex(o => o.url === s.url) === i
-  );
-
-  let responseText = text;
-  if (uniqueSources.length > 0) {
-    responseText += "\n\nSources:\n" + uniqueSources
-      .map((s, i) => `${i + 1}. [${s.title}](${s.url})`)
-      .join("\n");
-  }
-
-  return {
-    content: [{ type: "text", text: responseText }]
-  };
-}
-
-function makeHandler(ai, env) {
+function makeHandler(env) {
   return async function handleMcpMessage(msg) {
     const { jsonrpc, id, method, params } = msg;
     const ok = result => ({ jsonrpc, id, result });
@@ -201,7 +134,7 @@ function makeHandler(ai, env) {
         case "initialize":
           return ok({
             protocolVersion: "2024-11-05",
-            serverInfo: { name: "gemini-image-mcp", version: "3.0.0" },
+            serverInfo: { name: "gemini-image-mcp", version: "4.0.0" },
             capabilities: { tools: {} }
           });
         case "notifications/initialized":
@@ -212,9 +145,7 @@ function makeHandler(ai, env) {
           return ok({ tools: TOOLS });
         case "tools/call": {
           switch (params.name) {
-            case "generate_image": return ok(await handleGenerateImage(ai, env, params.arguments));
-            case "edit_image":     return ok(await handleEditImage(ai, env, params.arguments));
-            case "google_search":  return ok(await handleGoogleSearch(ai, params.arguments));
+            case "generate_image": return ok(await handleGenerateImage(env, params.arguments));
             default: return err(-32601, `Unknown tool: ${params.name}`);
           }
         }
@@ -230,14 +161,6 @@ function makeHandler(ai, env) {
 export default {
   async fetch(request, env, ctx) {
     try {
-      const apiKey = new URL(request.url).searchParams.get("apiKey");
-      if (!apiKey) {
-        return new Response(JSON.stringify({ error: "Missing apiKey query parameter" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
       if (request.method === "GET") {
         const encoder = new TextEncoder();
 
@@ -267,8 +190,7 @@ export default {
         return new Response("Method not allowed", { status: 405 });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
-      const handleMcpMessage = makeHandler(ai, env);
+      const handleMcpMessage = makeHandler(env);
 
       const body = await request.json();
       const messages = Array.isArray(body) ? body : [body];
@@ -300,3 +222,38 @@ export default {
     }
   }
 };
+
+// Stdio transport for local testing
+if (import.meta.main) {
+  const env = {
+    IMAGE_BUCKET: null,
+    R2_PUBLIC_URL: null
+  };
+
+  const handleMcpMessage = makeHandler(env);
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  process.stdin.on("data", (chunk) => {
+    const json = decoder.decode(chunk);
+    const messages = json.split("\n").filter(line => line.trim());
+
+    messages.forEach(async (line) => {
+      try {
+        const msg = JSON.parse(line);
+        const response = await handleMcpMessage(msg);
+        if (response) {
+          process.stdout.write(JSON.stringify(response) + "\n");
+        }
+      } catch (err) {
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg?.id,
+            error: { code: -32603, message: err.message }
+          }) + "\n"
+        );
+      }
+    });
+  });
+}
