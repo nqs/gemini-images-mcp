@@ -67,8 +67,8 @@ async function generateImageViaOpenRouter(prompt, aspectRatio, style, model, api
   const headers = {
     "Authorization": `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://gemini.mcp.nqs.io",
-    "X-Title": "Gemini Image MCP"
+    "HTTP-Referer": "https://image.mcp.nqs.io",
+    "X-Title": "Image MCP"
   };
 
   const payload = {
@@ -144,7 +144,7 @@ function makeHandler(apiKey) {
         case "initialize":
           return ok({
             protocolVersion: "2024-11-05",
-            serverInfo: { name: "gemini-image-mcp", version: "4.0.0" },
+            serverInfo: { name: "image-mcp", version: "4.0.0" },
             capabilities: { tools: {} }
           });
         case "notifications/initialized":
