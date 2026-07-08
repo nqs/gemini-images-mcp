@@ -1,4 +1,4 @@
-# gemini-image-mcp
+# image-mcp
 
 An MCP server that provides image generation tools powered by OpenRouter. Runs on Cloudflare Workers.
 
@@ -28,9 +28,9 @@ Add the server to your MCP configuration file (e.g. `~/.claude/mcp.json` for Cla
 ```json
 {
   "mcpServers": {
-    "gemini": {
+    "image-mcp": {
       "type": "url",
-      "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
+      "url": "https://image.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
     }
   }
 }
@@ -53,8 +53,8 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
 1. Clone the repo and install dependencies:
 
    ```bash
-   git clone https://github.com/nqs/gemini-images-mcp.git
-   cd gemini-images-mcp
+   git clone https://github.com/nqs/images-mcp.git
+   cd images-mcp
    npm install
    ```
 
@@ -80,7 +80,7 @@ If you'd prefer to deploy your own instance instead of using the hosted version:
    ```json
    {
      "mcpServers": {
-       "gemini": {
+       "image-mcp": {
          "type": "url",
          "url": "https://your-worker.your-subdomain.workers.dev?apiKey=YOUR_OPENROUTER_API_KEY"
        }

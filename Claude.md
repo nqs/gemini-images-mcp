@@ -1,4 +1,4 @@
-# Gemini Image MCP (OpenRouter Integration)
+# Image MCP (OpenRouter Integration)
 
 This repository exposes a Model Context Protocol (MCP) tool wrapper around OpenRouter image generation. Use `server.js` with MCP clients (including Anthropic Claude agents / Claude CLI) by calling tools via `tools/list` and `tools/call`.
 
@@ -86,14 +86,14 @@ Stateless `SSEClientTransport` (legacy `event: endpoint` + push-via-SSE) is **no
 
 ### AnythingLLM configuration
 
-In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using `sse` (or omitting `type`, which defaults to `sse`) will produce `Failed to start MCP server: gemini {"error":"Connection timeout"}` after 30 s.
+In `anythingllm_mcp_servers.json`, the `type` field MUST be `streamable`. Using `sse` (or omitting `type`, which defaults to `sse`) will produce `Failed to start MCP server: image-mcp {"error":"Connection timeout"}` after 30 s.
 
 ```json
 {
   "mcpServers": {
-    "gemini": {
+    "image-mcp": {
       "type": "streamable",
-      "url": "https://gemini.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
+      "url": "https://image.mcp.nqs.io?apiKey=YOUR_OPENROUTER_API_KEY"
     }
   }
 }

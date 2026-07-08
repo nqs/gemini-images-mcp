@@ -1,10 +1,10 @@
-name = "gemini-image-mcp"
+name = "image-mcp"
 main = "server.js"
 compatibility_date = "2025-04-01"
 description = "MCP server for image generation via OpenRouter"
 
 routes = [
-  { pattern = "gemini.mcp.nqs.io", custom_domain = true }
+  { pattern = "image.mcp.nqs.io", custom_domain = true }
 ]
 
 [placement]
@@ -12,10 +12,10 @@ mode = "smart"
 
 [[r2_buckets]]
 binding = "IMAGE_BUCKET"
-bucket_name = "gemini-mcp-images"
+bucket_name = "image-mcp-images"
 
 [vars]
-R2_PUBLIC_URL = "https://storage.gemini.mcp.nqs.io"
+R2_PUBLIC_URL = "https://storage.image.mcp.nqs.io"
 
 [observability]
 enabled = true

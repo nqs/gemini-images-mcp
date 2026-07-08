@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Test harness for gemini-image-mcp server.
+ * Test harness for image-mcp server.
  * Spawns the server as a child process and communicates over stdio using JSON-RPC.
  *
  * Usage:
