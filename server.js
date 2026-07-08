@@ -99,7 +99,7 @@ async function generateImageViaOpenRouter(prompt, aspectRatio, style, model, api
   return data.data?.[0]?.b64_json || null;
 }
 
-async function handleGenerateImage(apiKey, args) {
+async function handleGenerateImage(apiKey, env, args) {
   const parsed = z.object({
     prompt: z.string().min(1).max(1500),
     aspect_ratio: z.enum(ASPECT_RATIOS).optional().default("1:1"),
@@ -122,7 +122,7 @@ async function handleGenerateImage(apiKey, args) {
 
     let publicUrl = null;
     try {
-      publicUrl = await uploadToR2(null, base64Data, "image/png");
+      publicUrl = await uploadToR2(env, base64Data, "image/png");
     } catch {
       // R2 failure is non-fatal; base64 still returned
     }
@@ -133,7 +133,7 @@ async function handleGenerateImage(apiKey, args) {
   }
 }
 
-function makeHandler(apiKey) {
+function makeHandler(apiKey, env) {
   return async function handleMcpMessage(msg) {
     const { jsonrpc, id, method, params } = msg;
     const ok = result => ({ jsonrpc, id, result });
@@ -155,7 +155,7 @@ function makeHandler(apiKey) {
           return ok({ tools: TOOLS });
         case "tools/call": {
           switch (params.name) {
-            case "generate_image": return ok(await handleGenerateImage(apiKey, params.arguments));
+            case "generate_image": return ok(await handleGenerateImage(apiKey, env, params.arguments));
             default: return err(-32601, `Unknown tool: ${params.name}`);
           }
         }
@@ -208,7 +208,7 @@ export default {
         return new Response("Method not allowed", { status: 405 });
       }
 
-      const handleMcpMessage = makeHandler(apiKey);
+      const handleMcpMessage = makeHandler(apiKey, env);
 
       const body = await request.json();
       const messages = Array.isArray(body) ? body : [body];
@@ -250,7 +250,7 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const handleMcpMessage = makeHandler(apiKey);
+  const handleMcpMessage = makeHandler(apiKey, null);
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
